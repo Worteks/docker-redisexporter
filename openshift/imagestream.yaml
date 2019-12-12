@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: redisexporter
+  template: redisexporter-imagestream
+metadata:
+  annotations:
+    description: Redis Exporter database - ImageStream
+      see https://github.com/Worteks/docker-redisexporter
+    iconClass: icon-redis
+    openshift.io/display-name: Redis Exporter
+    tags: redisexporter
+  name: redisexporter-imagestream
+objects:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in Redis Exporter image
+    name: redisexporter-${FRONTNAME}
+parameters:
+- name: FRONTNAME
+  description: The name identifier assigned to objects defined in this template
+  displayName: Name
+  required: true
+  value: demo

@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: redisexporter
+  template: redisexporter-ephemeral
+metadata:
+  annotations:
+    description: Redis Exporter database - ephemeral
+      see https://github.com/Worteks/docker-redisexporter
+    iconClass: icon-redis
+    openshift.io/display-name: Redis Exporter
+    tags: redisexporter
+  name: redisexporter-ephemeral
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      name: redis-${FRONTNAME}
+    name: redis-${FRONTNAME}
+  spec:
+    replicas: 1
+    selector:
+      name: redis-${FRONTNAME}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: redis-${FRONTNAME}
+      spec:
+        dnsPolicy: ClusterFirst
+        containers:
+        - imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 20
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            tcpSocket:
+              port: 6379
+          name: redis
+          ports:
+          - name: redis
+            containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - "-i"
+              - "-c"
+              - /is-ready.sh
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            timeoutSeconds: 20
+          resources:
+            limits:
+              cpu: "${REDIS_CPU_LIMIT}"
+              memory: "${REDIS_MEMORY_LIMIT}"
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - name: data
+            mountPath: /var/lib/redis/data
+        - imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            tcpSocket:
+              port: 9113
+            timeoutSeconds: 3
+          name: exporter
+          ports:
+          - containerPort: 9113
+            protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            tcpSocket:
+              port: 9113
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: "${EXPORTER_CPU_LIMIT}"
+              memory: "${EXPORTER_MEMORY_LIMIT}"
+        restartPolicy: Always
+        volumes:
+        - emptyDir: {}
+          name: data
+    triggers:
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - redis
+        from:
+          kind: ImageStreamTag
+          name: ${REDIS_IMAGESTREAM_TAG}
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - exporter
+        from:
+          kind: ImageStreamTag
+          name: redisexporter-${REDIS_EXPORTER_IMAGE_FRONTNAME}:${REDIS_EXPORTER_IMAGE_TAG}
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: redis-${FRONTNAME}
+  spec:
+    ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+    selector:
+      name: redis-${FRONTNAME}
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes Redis Prometheus Exporter
+    labels:
+      ${PROMETHEUS_SERVICE_SELECTOR}: ${PROMETHEUS_SERVICE_MATCH}
+    name: redisexporter-${FRONTNAME}
+  spec:
+    ports:
+    - name: exporter
+      port: 9113
+      targetPort: 9113
+    selector:
+      name: redis-${FRONTNAME}
+    type: ClusterIP
+parameters:
+- name: EXPORTER_CPU_LIMIT
+  description: Maximum amount of CPU an exporter container can use
+  displayName: Exporters CPU Limit
+  required: true
+  value: 50m
+- name: EXPORTER_MEMORY_LIMIT
+  description: Maximum amount of Memory an exporter container can use
+  displayName: Exporters Memory Limit
+  required: true
+  value: 64Mi
+- name: FRONTNAME
+  description: The name identifier assigned to objects defined in this template
+  displayName: Name
+  required: true
+  value: demo
+- name: REDIS_CPU_LIMIT
+  description: Maximum amount of CPU an Redis container can use
+  displayName: Redis CPU Limit
+  required: true
+  value: 100m
+- name: REDIS_EXPORTER_IMAGE_FRONTNAME
+  description: The name assigned to ImageStream object defined in corresponding template
+  displayName: Name
+  required: true
+  value: wsweet
+- name: REDIS_EXPORTER_IMAGE_TAG
+  description: The ImageStreamTag we should pull images from
+  displayName: Tag
+  required: true
+  value: master
+- name: REDIS_IMAGESTREAM_TAG
+  value: redis-wsweet:master
+- name: REDIS_MEMORY_LIMIT
+  description: Maximum amount of memory an Redis container can use
+  displayName: Redis Memory Limit
+  required: true
+  value: 256Mi
+- name: PROMETHEUS_SERVICE_SELECTOR
+  description: Prometheus Selector (key)
+  displayName: Prometheus Service Selector Key
+  required: true
+  value: prometheus
+- name: PROMETHEUS_SERVICE_MATCH
+  description: Prometheus Selector (value)
+  displayName: Prometheus Service Selector Value
+  required: true
+  value: scrape-me
